@@ -409,9 +409,10 @@ class GrpcResolver:
                     flag_key=flag_key, context=context
                 )
                 response = self.stub.ResolveObject(request, **call_args)
-                value = MessageToDict(response, preserving_proto_field_name=True)[
-                    "value"
-                ]
+                # DISABLED responses omit the value field entirely; fall back to default_value
+                value = MessageToDict(response, preserving_proto_field_name=True).get(
+                    "value", default_value
+                )
             elif flag_type == FlagType.FLOAT:
                 request = evaluation_pb2.ResolveFloatRequest(
                     flag_key=flag_key, context=context
@@ -443,8 +444,12 @@ class GrpcResolver:
             raise GeneralError(message) from e
 
         # When no default variant is configured, the server returns an empty/zero proto
-        # value with reason=DEFAULT. In that case, return the caller's code default value.
-        if response.reason == Reason.DEFAULT and not response.variant:
+        # value with reason=DEFAULT. For DISABLED flags the server omits the variant too.
+        # In both cases, return the caller's code default value.
+        if (
+            response.reason in (Reason.DEFAULT, Reason.DISABLED)
+            and not response.variant
+        ):
             value = default_value
 
         # Got a valid flag and valid type. Return it.
